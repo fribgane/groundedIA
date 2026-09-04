@@ -21,6 +21,27 @@ spring:
       - classpath:db/migration/hr-leave
     fail-on-missing-locations: true
 
+  # Appels HTTP sortants (Ollama) : un lot d'embeddings peut prendre des dizaines de secondes sur un processeur.
+  http:
+    client:
+      read-timeout: 10m
+
+# Modèles locaux via Ollama : gratuits, hors ligne, les documents ne quittent pas le poste.
+# bge-m3 : embeddings de 1024 dimensions (= colonne chunk.embedding), multilingue, ≈ 1,2 Go en mémoire.
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  embedding-model: bge-m3
+
+# Recherche : vector | fulltext | hybrid (fusion RRF des deux classements). Le mode peut être forcé par
+# le paramètre mode= de GET /search. limit : résultats renvoyés. En hybride, profondeur de chaque classement
+# fusionné : la liste vectorielle reste pertinente en profondeur, la liste plein texte en « ou » ne l'est qu'en tête
+# (valeurs calibrées sur les dix questions du test comparatif, voir README).
+search:
+  mode: hybrid
+  limit: 5
+  candidats-vectoriels: 20
+  candidats-plein-texte: 5
+
 management:
   endpoints:
     web:

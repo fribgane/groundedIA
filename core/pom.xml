@@ -14,12 +14,23 @@
     <name>groundedIA :: core</name>
     <description>Le socle réutilisable : clients LLM et embeddings, ingestion, recherche, ancrage et citations</description>
 
-    <!-- Bibliothèque : pas de classe main. -->
+    <!-- Bibliothèque : pas de classe main, pas de serveur embarqué (il vient de l'application). -->
     <dependencies>
         <!-- Composants Spring (@Service, @Repository), accès JDBC (JdbcClient) et transactions. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- HTTP dans les deux sens : RestClient pour appeler Ollama, annotations de l'endpoint REST /search. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <!-- JSON (Jackson) pour les échanges avec Ollama et la réponse de /search. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
         </dependency>
 
         <!-- Extraction du texte des PDF, page par page. Version non gérée par Spring Boot, donc épinglée ici.
@@ -36,7 +47,7 @@
             </exclusions>
         </dependency>
 
-        <!-- Tests unitaires : JUnit 5 et AssertJ. -->
+        <!-- Tests unitaires : JUnit 5, AssertJ, Mockito, MockRestServiceServer (simulation d'Ollama). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

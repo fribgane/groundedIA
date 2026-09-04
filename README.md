@@ -14,10 +14,11 @@ les requêtes sont écrites en Java avec des paramètres liés.
       migrations Flyway, application minimale avec `/actuator/health`
 - [ ] **Étape 1 — Ingestion documentaire** : lecture des PDF (PDFBox), découpage aux titres et aux phrases,
       provenance obligatoire (document, chapitre, page), commande `--ingest`, ingestion idempotente
-- [ ] **Étape 2 — Clients LLM et embeddings** : interfaces `LlmClient` / `EmbeddingClient`, implémentations
-      `RestClient`, bascule API distante / Ollama par configuration, calcul des embeddings des morceaux
-- [ ] **Étape 3 — Recherche documentaire hybride** : plein texte français (index GIN) + similarité vectorielle
-      (pgvector), fusion des résultats
+- [ ] **Étape 2 — Recherche** : interface `EmbeddingClient` (Ollama, bge-m3, en local), embeddings des morceaux
+      dans pgvector, trois modes (vectoriel, plein texte français, hybride par Reciprocal Rank Fusion),
+      endpoint `/search`, test comparatif sur dix questions
+- [ ] **Étape 3 — Client LLM** : interface `LlmClient`, implémentations `RestClient` (API distante / Ollama),
+      bascule par configuration
 - [ ] **Étape 4 — Accès aux données métier** : requêtes SQL écrites en Java avec paramètres liés, résultats
       transmis au LLM ; jamais de SQL généré
 - [ ] **Étape 5 — Réponse ancrée** : assemblage du contexte (extraits documentaires + données métier), réponse
@@ -87,6 +88,44 @@ ouvertes Légifrance. Tout autre PDF texte déposé dans `documents/` est ingér
 
 ```bash
 docker compose exec postgres psql -U groundedia -d groundedia -c "SELECT document, count(*) AS morceaux, min(page), max(page) FROM chunk GROUP BY document;"
+```
+
+## Recherche
+
+Prérequis : Ollama en local (`ollama serve`) avec le modèle d'embedding `bge-m3` (`ollama pull bge-m3`, environ
+1,2 Go). Les embeddings sont calculés sur le poste, gratuitement : les documents ne quittent pas la machine.
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--embed    # vecteurs des morceaux qui n'en ont pas, par lots, avec progression
+./mvnw spring-boot:run                                        # puis, dans un autre terminal :
+curl "http://localhost:8080/search?q=combien+de+jours+pour+me+marier&mode=hybrid"
+```
+
+Sous PowerShell : `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--embed"` (guillemets obligatoires).
+Le calcul prend environ 4 minutes pour 500 morceaux sur un processeur portable ; la commande reprend là où elle
+s'est arrêtée. Pour changer de modèle d'embedding, remettre les vecteurs à zéro
+(`UPDATE chunk SET embedding = NULL;`) puis relancer `--embed` ; un modèle d'une autre dimension que 1024
+(par exemple `nomic-embed-text`, 768) impose aussi une migration de la colonne `embedding`.
+
+Trois modes, choisis par `search.mode` dans `application.yml` ou par le paramètre `mode=` de l'endpoint :
+
+- `vector` : similarité cosinus (pgvector) entre le vecteur de la question et celui de chaque morceau ;
+- `fulltext` : recherche lexicale PostgreSQL en français. Question ordinaire : mots lemmatisés, mots vides
+  ignorés, filtre sur l'index GIN, classement `ts_rank_cd`. Question qui cite un article (« L3141-3 »,
+  « article 5.7 ») : seuls les morceaux qui portent ce titre ou le citent sont retenus, par expression régulière
+  tolérante à la typographie (le lexiseur français sépare « L. 3141-3 » en « 3141 » et « -3 »), le titre d'abord ;
+- `hybrid` : les 20 meilleurs vectoriels et les 5 meilleurs plein texte, fusionnés par Reciprocal Rank Fusion
+  (k = 60). Les profondeurs diffèrent parce que la liste vectorielle reste pertinente loin dans le classement
+  alors qu'une liste plein texte en « ou » n'est fiable qu'en tête ; elles ont été calibrées sur les dix questions
+  du test comparatif.
+
+L'endpoint renvoie les 5 meilleurs morceaux avec leur score (similarité, rang plein texte ou score RRF selon le
+mode), leur document, leur article et leur page. Le test comparatif exécute dix questions dans les trois modes,
+affiche les résultats côte à côte (rang du bon morceau, top 3 de chaque mode) et vérifie que l'hybride trouve le
+bon morceau dans le top 3 plus souvent que chaque mode seul :
+
+```bash
+./mvnw test -pl examples/hr-leave -am -Dcomparatif=true
 ```
 
 ## Structure

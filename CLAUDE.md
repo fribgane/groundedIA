@@ -97,6 +97,32 @@ docker-compose.yml      PostgreSQL 16 + pgvector (image pgvector/pgvector), volu
 - Tests unitaires du découpage dans `core` (`./mvnw test`), sans base de données ; le test d'extraction construit
   ses PDF avec PDFBox.
 
+## Recherche (étape 2)
+
+- Package `fr.groundedia.core.embedding` : `EmbeddingClient` (interface maison), `OllamaEmbeddingClient`
+  (`RestClient`, `POST /api/embed`, modèle `ollama.embedding-model`, base `ollama.base-url`), `EmbeddingCommand`
+  (argument `--embed` : vecteurs des morceaux sans embedding, lots de 16, barre de progression dans les journaux,
+  reprise possible). Le délai HTTP est réglé par `spring.http.client.read-timeout`.
+- Modèle : `bge-m3` (1024 dimensions = colonne `chunk.embedding`, multilingue). Changer de modèle implique de
+  changer la dimension de la colonne par migration et de recalculer tous les vecteurs.
+- Package `fr.groundedia.core.recherche` : `Mode` (vector | fulltext | hybrid, configuré par `search.mode`),
+  `RechercheRepository` (deux requêtes SQL à paramètres liés), `ReferencesArticles` (une référence citée dans la
+  question est reconnue quelle que soit sa typographie et sa casse : « L3141-3 », « L. 3141-3 », « l3141-3 »),
+  `Rrf` (fusion, k = 60, égalités départagées par l'identifiant), `RechercheService`, `RechercheController`
+  (`GET /search?q=&mode=`, `search.limit` = 5 résultats ; 400 pour une question vide ou un mode inconnu, 503 si
+  Ollama est arrêté, le modèle absent ou les embeddings non calculés).
+- Lexical (`fulltext`) : sans référence, les lexèmes de `plainto_tsquery('french', …)` sont cherchés en « ou » (pas
+  en « et ») pour garder du rappel, classés par `ts_rank_cd` normalisé dans [0, 1[ (option 32). Avec une référence,
+  seuls les morceaux qui la portent en titre (+2) ou la citent (+1) sont retenus : les paliers sont stricts.
+- Hybride : `search.candidats-vectoriels` = 20 et `search.candidats-plein-texte` = 5. Profondeurs différentes à
+  dessein (la liste plein texte en « ou » n'est fiable qu'en tête), calibrées sur les dix questions du test
+  comparatif ; ne pas les retoucher sans refaire la mesure et le dire.
+- Après un `--ingest` qui a réinséré des morceaux, relancer `--embed` (l'application le rappelle au démarrage).
+  Changement de modèle : `UPDATE chunk SET embedding = NULL;` puis `--embed` ; autre dimension que 1024 =
+  migration de la colonne.
+- Test comparatif `RechercheComparativeTest` (examples/hr-leave) : dix questions, cinq en langage naturel, cinq
+  avec référence exacte ; activé par `-Dcomparatif=true` car il exige la base, les embeddings et Ollama.
+
 ## Conventions de code
 
 - Langue : documentation, commentaires, messages et vocabulaire métier en **français** (tables, colonnes,
@@ -121,6 +147,10 @@ docker compose exec postgres psql -U groundedia -d groundedia -c 'SELECT * FROM 
 .\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--ingest=documents/"   # même chose sous PowerShell (guillemets obligatoires)
 docker compose exec postgres psql -U groundedia -d groundedia -c 'SELECT document, count(*) FROM chunk GROUP BY document;'
 docker compose exec postgres psql -U groundedia -d groundedia -c 'DELETE FROM document;'   # repartir de zéro côté documents (cascade sur chunk)
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--embed     # embeddings des morceaux (Ollama + bge-m3 requis)
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--embed"   # même chose sous PowerShell (guillemets obligatoires)
+curl "http://localhost:8080/search?q=que+dit+l+article+L3141-3&mode=fulltext"   # recherche (mode : vector | fulltext | hybrid)
+./mvnw test -pl examples/hr-leave -am -Dcomparatif=true      # test comparatif des trois modes (base + Ollama requis ; -am construit core)
 ./mvnw -q package                                 # build complet de tous les modules (tests compris)
 ./mvnw -q test -pl core                           # tests unitaires du socle
 ./mvnw clean                                      # obligatoire après suppression ou renommage d'une migration :

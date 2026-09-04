@@ -14,20 +14,20 @@ import org.springframework.context.ConfigurableApplicationContext;
  * <p>Le scan des composants couvre tout {@code fr.groundedia} afin que les beans du socle ({@code core})
  * soient détectés sans configuration supplémentaire.
  *
- * <p>Lancée avec {@code --ingest=<dossier>}, l'application exécute la commande d'ingestion des PDF
+ * <p>Lancée avec une commande ({@code --ingest=<dossier>} ou {@code --embed}), l'application l'exécute
  * sans démarrer de serveur web, puis s'arrête.
  */
 @SpringBootApplication(scanBasePackages = "fr.groundedia")
 public class HrLeaveApplication {
 
     public static void main(String[] args) {
-        boolean ingestion = Arrays.stream(args).anyMatch(arg -> arg.startsWith("--ingest"));
+        boolean commande = Arrays.stream(args).anyMatch(arg -> arg.startsWith("--ingest") || arg.startsWith("--embed"));
         SpringApplication application = new SpringApplication(HrLeaveApplication.class);
-        if (ingestion) {
+        if (commande) {
             application.setWebApplicationType(WebApplicationType.NONE);
         }
         ConfigurableApplicationContext contexte = application.run(args);
-        if (ingestion) {
+        if (commande) {
             contexte.close();
         }
     }

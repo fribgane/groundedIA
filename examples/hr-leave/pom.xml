@@ -57,6 +57,13 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+
+        <!-- Test comparatif des modes de recherche (JUnit 5, AssertJ, contexte Spring Boot). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -64,6 +71,14 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Répertoire de travail = racine du dépôt : les tests trouvent le même .env que Compose. -->
+                    <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+                </configuration>
             </plugin>
         </plugins>
     </build>
