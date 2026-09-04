@@ -1,0 +1,26 @@
+# PostgreSQL 16 + extension pgvector (image officielle du projet pgvector, version épinglée).
+# Identifiants et port sont lus dans l'environnement (fichier .env ou variables exportées) ;
+# les valeurs par défaut ne servent qu'au poste de développement. Voir .env.example.
+name: groundedia
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16
+    container_name: groundedia-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-groundedia}
+      POSTGRES_USER: ${POSTGRES_USER:-groundedia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-groundedia}
+    ports:
+      # Publié sur la boucle locale uniquement : la base d'un poste de démonstration ne doit pas être visible du réseau.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

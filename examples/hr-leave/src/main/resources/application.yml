@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: groundedia-hr-leave
+
+  # En développement, l'application lit le même fichier .env que docker-compose (optionnel, à la racine du dépôt).
+  # Les variables d'environnement, si elles sont définies, gardent la priorité. En production, pas de fichier .env.
+  config:
+    import: optional:file:./.env[.properties]
+
+  # Mêmes variables et mêmes valeurs par défaut que docker-compose.yml.
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:groundedia}
+    username: ${POSTGRES_USER:groundedia}
+    password: ${POSTGRES_PASSWORD:groundedia}
+
+  # Le schéma est géré exclusivement par Flyway : migrations du socle (core) et du cas d'usage (hr-leave),
+  # ordonnées par leur horodatage. Un emplacement introuvable (jar de core absent) fait échouer le démarrage.
+  flyway:
+    locations:
+      - classpath:db/migration/core
+      - classpath:db/migration/hr-leave
+    fail-on-missing-locations: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

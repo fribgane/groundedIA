@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>fr.groundedia</groupId>
+        <artifactId>groundedia-examples</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>groundedia-example-hr-leave</artifactId>
+    <name>groundedIA :: examples :: hr-leave</name>
+    <description>Cas d'usage : questions sur les congés, ancrées sur les documents RH et la table salarie</description>
+
+    <properties>
+        <!-- Module applicatif : c'est lui que « ./mvnw spring-boot:run » lance. -->
+        <spring-boot.run.skip>false</spring-boot.run.skip>
+        <!-- Répertoire de travail = racine du dépôt, pour que l'application trouve le fichier .env partagé avec Compose. -->
+        <spring-boot.run.workingDirectory>${maven.multiModuleProjectDirectory}</spring-boot.run.workingDirectory>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>fr.groundedia</groupId>
+            <artifactId>groundedia-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Serveur HTTP (Tomcat) et endpoints de supervision (/actuator/health). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Accès à PostgreSQL par JDBC (requêtes écrites en Java, paramètres liés) et migrations Flyway. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <!-- Depuis Flyway 10, le support de chaque base est un module séparé : celui-ci est requis pour PostgreSQL. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

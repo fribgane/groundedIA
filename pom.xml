@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Le starter parent de Spring Boot gère les versions des dépendances et des plugins (compilateur, jar, surefire). -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>fr.groundedia</groupId>
+    <artifactId>groundedia-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>groundedIA</name>
+    <description>Socle Spring Boot qui branche un LLM sur un SI existant : documents + base métier, citations, refus, évaluation automatique</description>
+
+    <modules>
+        <module>core</module>
+        <module>examples</module>
+        <module>eval</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- Seul le module applicatif (examples/hr-leave) est lançable : il remet cette propriété à false.
+             Ainsi « ./mvnw spring-boot:run » à la racine lance directement l'application. -->
+        <spring-boot.run.skip>true</spring-boot.run.skip>
+    </properties>
+</project>
