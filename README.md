@@ -12,10 +12,10 @@ les requêtes sont écrites en Java avec des paramètres liés.
 
 - [x] **Étape 0 — Socle technique** : structure Maven multi-modules, PostgreSQL 16 + pgvector via Docker,
       migrations Flyway, application minimale avec `/actuator/health`
-- [ ] **Étape 1 — Clients LLM et embeddings** : interfaces `LlmClient` / `EmbeddingClient`, implémentations
-      `RestClient`, bascule API distante / Ollama par configuration
-- [ ] **Étape 2 — Ingestion documentaire** : découpage des documents en chunks (document, chapitre, page),
-      calcul des embeddings, stockage dans `chunk`
+- [ ] **Étape 1 — Ingestion documentaire** : lecture des PDF (PDFBox), découpage aux titres et aux phrases,
+      provenance obligatoire (document, chapitre, page), commande `--ingest`, ingestion idempotente
+- [ ] **Étape 2 — Clients LLM et embeddings** : interfaces `LlmClient` / `EmbeddingClient`, implémentations
+      `RestClient`, bascule API distante / Ollama par configuration, calcul des embeddings des morceaux
 - [ ] **Étape 3 — Recherche documentaire hybride** : plein texte français (index GIN) + similarité vectorielle
       (pgvector), fusion des résultats
 - [ ] **Étape 4 — Accès aux données métier** : requêtes SQL écrites en Java avec paramètres liés, résultats
@@ -54,6 +54,39 @@ curl http://localhost:8080/actuator/health
 
 docker compose exec postgres psql -U groundedia -d groundedia -c 'SELECT * FROM salarie;'
 # 3 lignes : Amina Diallo, Marc Petit, Julie Nguyen
+```
+
+## Ingestion des documents
+
+Déposer les PDF (conventions collectives, extraits du Code du travail…) dans `documents/`, dossier ignoré par git, puis :
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--ingest=documents/
+```
+
+Sous Windows PowerShell, l'argument doit être entre guillemets (PowerShell le coupe sinon au premier point) :
+
+```powershell
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--ingest=documents/"
+```
+
+Chaque PDF est lu page par page (Apache PDFBox) puis découpé : on coupe aux titres (« Article 24 », « Art. L3141-3 »,
+« L. 3141-1 », « Chapitre Ier », lignes en majuscules) sans jamais mélanger deux titres dans un morceau, jamais au milieu
+d'une phrase (les unités sont les phrases et les alinéas d'énumération « 1° … ; 2° … »), en remplissant chaque morceau
+jusqu'à 1200 caractères au maximum, soit 800 à 1200 caractères dans les sections longues (un article court forme un
+morceau court), avec un chevauchement de 100 caractères entre morceaux consécutifs d'un même titre. En-têtes et pieds de
+page, numéros de page, lignes de sommaire et lignes de liens sont ignorés. Chaque morceau conserve le document, le titre
+dont il provient et sa page : c'est ce qui permet de citer la source. L'ingestion est idempotente : un PDF inchangé (même
+empreinte SHA-256, même version des règles de découpage) est ignoré, un PDF modifié remplace ses morceaux, un PDF
+illisible est signalé sans bloquer les autres.
+
+Corpus de démonstration (textes publics) : la convention collective Syntec consolidée par l'avenant n° 46 du
+16 juillet 2021, et le Titre IV « Congés payés et autres congés » du Code du travail (parties législative et
+réglementaire), extrait du PDF quotidien de [codes.droit.org](https://codes.droit.org/), compilation des données
+ouvertes Légifrance. Tout autre PDF texte déposé dans `documents/` est ingéré de la même façon.
+
+```bash
+docker compose exec postgres psql -U groundedia -d groundedia -c "SELECT document, count(*) AS morceaux, min(page), max(page) FROM chunk GROUP BY document;"
 ```
 
 ## Structure

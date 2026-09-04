@@ -14,5 +14,33 @@
     <name>groundedIA :: core</name>
     <description>Le socle réutilisable : clients LLM et embeddings, ingestion, recherche, ancrage et citations</description>
 
-    <!-- Bibliothèque : pas de classe main, et aucune dépendance tant qu'une étape n'en a pas besoin. -->
+    <!-- Bibliothèque : pas de classe main. -->
+    <dependencies>
+        <!-- Composants Spring (@Service, @Repository), accès JDBC (JdbcClient) et transactions. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- Extraction du texte des PDF, page par page. Version non gérée par Spring Boot, donc épinglée ici.
+             commons-logging est exclu : Spring fournit déjà cette API (spring-jcl) et la route vers Logback. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.8</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- Tests unitaires : JUnit 5 et AssertJ. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

@@ -34,5 +34,8 @@ logs/
 # Environnement local (identifiants, ports) : voir .env.example
 .env
 
+# PDF sources de l'ingestion (textes publics, volumineux) : déposés localement
+documents/
+
 # Claude Code : réglages locaux
 .claude/settings.local.json

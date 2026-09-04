@@ -58,8 +58,10 @@ docker-compose.yml      PostgreSQL 16 + pgvector (image pgvector/pgvector), volu
   migration, quel que soit son module, est toujours postérieure à celles déjà appliquées (Flyway reste en
   `out-of-order=false`). Ne jamais modifier une migration déjà appliquée : en écrire une nouvelle.
 - Tables actuelles :
-  - `chunk` (id, document, chapitre, page, texte, embedding vector(1024)) + index GIN plein texte français
-    sur `to_tsvector('french', texte)` ; les requêtes doivent utiliser exactement cette expression.
+  - `document` (nom, empreinte, nb_pages, ingere_le) : un PDF ingéré ; supprimer la ligne supprime ses morceaux.
+  - `chunk` (id, document → document.nom, chapitre NOT NULL, page NOT NULL, texte, embedding vector(1024))
+    + index GIN plein texte français sur `to_tsvector('french', texte)` ; les requêtes doivent utiliser
+    exactement cette expression.
   - `salarie` (id, nom, date_embauche, type_contrat, statut, temps_travail, solde_conges, convention),
     avec 3 salariés de test insérés par migration.
 - Identifiants et port : variables `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`,
@@ -67,6 +69,33 @@ docker-compose.yml      PostgreSQL 16 + pgvector (image pgvector/pgvector), volu
   à la racine (ignoré par git) est lu à la fois par `docker-compose.yml` et par l'application
   (`spring.config.import`, optionnel) ; les variables d'environnement, si présentes, ont priorité.
   Le port PostgreSQL n'est publié que sur `127.0.0.1`.
+
+## Ingestion des documents (étape 1)
+
+- Package `fr.groundedia.core.ingestion` : `PdfTextExtractor` (PDFBox, texte page par page), `Chunker` (découpage),
+  `IngestionService` (empreinte, une transaction par document), `IngestionCommand` (argument `--ingest=<dossier>`,
+  l'application démarre alors sans serveur web et s'arrête à la fin).
+- Règles de découpage, par ordre de priorité : couper aux titres (« Article 24 », « Art. L3141-3 », « L. 3141-1 »,
+  « Chapitre Ier », lignes en majuscules) sans jamais mélanger deux titres dans un morceau ; ne jamais couper au
+  milieu d'une phrase (unités = phrases, et alinéas d'énumération « 1° … ; 2° … ») ; remplir chaque morceau jusqu'à
+  1200 caractères au maximum, jamais au-delà sauf phrase seule plus longue (soit 800 à 1200 dans les sections longues,
+  un article court donne un morceau court) ; reprendre 100 caractères du morceau précédent, jamais au-delà d'un titre.
+- Provenance obligatoire (colonnes `NOT NULL`) : `document` = nom du fichier, `chapitre` = dernier titre vu
+  (sinon « Début du document »), `page` = page où commence le morceau. C'est ce qui permet de citer.
+- Idempotence : table `document` avec une empreinte = SHA-256 du fichier + `Chunker.VERSION`. Inchangé = ignoré,
+  modifié = remplacé (suppression en cascade des morceaux). **Toute modification des règles de découpage
+  incrémente `Chunker.VERSION`**, ce qui force la ré-ingestion de tous les documents au prochain `--ingest`.
+- Nettoyage des PDF réels, appris sur les documents de terrain : en-têtes et pieds de page (lignes d'extrémité de
+  page répétées, numéro de page neutralisé), lignes de sommaire à points de suite, lignes de liens (« > … »,
+  « service-public.fr ») et leur intitulé, métadonnées Légifrance (« En vigueur étendu », « Modifié par … »)
+  jamais prises pour un intitulé d'article. Trois styles de titres d'articles reconnus : « Article 24 »,
+  « Art. L3141-3 », « L. 3141-1 » seul en tête de ligne (codes compilés).
+- Les PDF sources sont dans `documents/`, ignoré par git (textes publics volumineux). Corpus de démonstration :
+  convention collective Syntec (avenant n° 46 du 16 juillet 2021, texte consolidé, 60 pages) et Code du travail,
+  Titre IV « Congés payés et autres congés » des parties législative (40 pages) et réglementaire (24 pages),
+  extraits du PDF quotidien de codes.droit.org (compilation des données ouvertes Légifrance/DILA).
+- Tests unitaires du découpage dans `core` (`./mvnw test`), sans base de données ; le test d'extraction construit
+  ses PDF avec PDFBox.
 
 ## Conventions de code
 
@@ -88,7 +117,12 @@ docker compose up -d                              # PostgreSQL + pgvector (port 
 ./mvnw spring-boot:run                            # lance examples/hr-leave (PowerShell : .\mvnw.cmd ...)
 curl http://localhost:8080/actuator/health        # {"status":"UP"} : l'application et sa connexion à la base
 docker compose exec postgres psql -U groundedia -d groundedia -c 'SELECT * FROM salarie;'
-./mvnw -q package                                 # build complet de tous les modules
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--ingest=documents/   # ingère les PDF de documents/
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--ingest=documents/"   # même chose sous PowerShell (guillemets obligatoires)
+docker compose exec postgres psql -U groundedia -d groundedia -c 'SELECT document, count(*) FROM chunk GROUP BY document;'
+docker compose exec postgres psql -U groundedia -d groundedia -c 'DELETE FROM document;'   # repartir de zéro côté documents (cascade sur chunk)
+./mvnw -q package                                 # build complet de tous les modules (tests compris)
+./mvnw -q test -pl core                           # tests unitaires du socle
 ./mvnw clean                                      # obligatoire après suppression ou renommage d'une migration :
                                                   # Maven ne purge pas les copies obsolètes dans target/classes
 docker compose down -v                            # repartir d'une base vide (supprime le volume)
