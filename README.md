@@ -17,18 +17,19 @@ les requêtes sont écrites en Java avec des paramètres liés.
 - [ ] **Étape 2 — Recherche** : interface `EmbeddingClient` (Ollama, bge-m3, en local), embeddings des morceaux
       dans pgvector, trois modes (vectoriel, plein texte français, hybride par Reciprocal Rank Fusion),
       endpoint `/search`, test comparatif sur dix questions
-- [ ] **Étape 3 — Client LLM** : interface `LlmClient`, implémentations `RestClient` (API distante / Ollama),
-      bascule par configuration
+- [ ] **Étape 3 — Réponse ancrée et garde-fous** : interface `LlmClient` (Ollama local / API distante, bascule par
+      configuration), prompt qui impose les extraits et les citations, refus technique sous un seuil de confiance
+      sans appeler le LLM, contrôle des citations après génération, endpoint `/ask`
 - [ ] **Étape 4 — Accès aux données métier** : requêtes SQL écrites en Java avec paramètres liés, résultats
       transmis au LLM ; jamais de SQL généré
-- [ ] **Étape 5 — Réponse ancrée** : assemblage du contexte (extraits documentaires + données métier), réponse
-      avec citation des sources
-- [ ] **Étape 6 — Refus et garde-fous** : pas de source suffisante, pas de réponse ; contrôle que chaque
-      affirmation cite une source réelle
-- [ ] **Étape 7 — Cas d'usage hr-leave de bout en bout** : API REST, scénarios de questions sur les congés
+- [ ] **Étape 5 — Croisement documents et données** : la réponse combine les extraits et la situation du salarié
+      (ancienneté, solde de congés), avec citation de chaque source
+- [ ] **Étape 6 — Cas d'usage hr-leave de bout en bout** : API REST, scénarios de questions sur les congés
       des salariés
-- [ ] **Étape 8 — Harnais d'évaluation** : jeu de questions de référence, métriques de fiabilité (ancrage,
+- [ ] **Étape 7 — Harnais d'évaluation** : jeu de questions de référence, métriques de fiabilité (ancrage,
       citations, refus), rapport automatique
+- [ ] **Étape 8 — Observabilité et coûts** : journal des refus et des réponses suspectes, latence et jetons
+      par question, comparaison local / API distante
 
 ## Prérequis
 
@@ -126,6 +127,78 @@ bon morceau dans le top 3 plus souvent que chaque mode seul :
 
 ```bash
 ./mvnw test -pl examples/hr-leave -am -Dcomparatif=true
+```
+
+## Réponse ancrée
+
+Prérequis : Ollama avec `bge-m3` dans tous les cas (la question est vectorisée localement), et pour la génération soit
+un modèle local (`ollama pull qwen2.5:3b`, environ 1,9 Go), soit une clé d'API distante. Seule la génération bascule.
+
+Le générateur est choisi par une seule ligne de configuration, `llm.provider` dans `application.yml` :
+
+- `local` (défaut) : Ollama sur le poste, modèle `llm.local.model` ;
+- `api` : toute API compatible OpenAI (`llm.api.base-url`, `llm.api.model` ; Mistral par défaut), avec la clé lue
+  par Spring depuis l'environnement (variable `LLM_API_KEY`, ou le fichier `.env` local ignoré par git), jamais
+  dans le code ni dans un fichier versionné.
+
+Le reste du code ne connaît que l'interface `LlmClient` ; un test le prouve en démarrant le contexte avec chaque valeur.
+
+```bash
+./mvnw spring-boot:run
+curl -s -X POST http://localhost:8080/ask -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'EOF'
+{"question": "J'ai 3 ans d'ancienneté, combien de jours pour mon mariage ?"}
+EOF
+```
+
+Le JSON passe par l'entrée standard : aucune apostrophe à échapper, et les accents restent en UTF-8 (le `curl` de
+Git Bash les enverrait sinon en cp1252). La réponse contient le texte généré, les citations fondées, les morceaux
+fournis au modèle, la latence, les jetons consommés, la confiance de la recherche et le seuil. Sur un processeur
+portable avec `qwen2.5:3b`, compter 45 à 60 secondes par question (environ 2 400 jetons de prompt), moins de 10 s
+quand le prompt est déjà en cache, et un peu plus de 100 ms pour un refus sans appel au modèle.
+
+Trois garde-fous, dont deux ne dépendent pas du modèle :
+
+1. **Avant le modèle** : la confiance de la recherche hybride doit atteindre `reponse.seuil` (0,58), sinon le
+   service refuse **sans appeler le LLM**. La confiance est le maximum de la similarité cosinus du meilleur morceau
+   et de la densité lexicale du meilleur morceau (n/(n+10) pour n occurrences des mots de la question) ; elle vaut 1
+   quand la question cite un article présent en titre dans le corpus (un article seulement cité par d'autres ne
+   compte pas). Mesure sur 24 questions avec bge-m3 : couvertes entre 0,615 et 1, hors sujet entre 0,30 et 0,547
+   (« capitale du Japon » 0,30, « montant du SMIC » 0,52, « télétravail à l'étranger » 0,547) ; le seuil est au
+   milieu de l'écart. Ce que le code garantit : le refus du hors-sujet franc. Ce qu'il ne garantit pas : une
+   question hors sujet qui réutilise le vocabulaire du corpus, ou qui cite un article présent, atteint le modèle,
+   et seule la consigne joue alors. À remesurer si le modèle d'embedding ou le corpus change.
+2. **Dans le prompt** : répondre uniquement à partir des extraits, citer chaque affirmation au format
+   `[Document, Article, p. N]`, refuser par la phrase exacte « Je n'ai pas trouvé cette information dans les
+   documents fournis. », ne jamais utiliser de connaissances générales, signaler les contradictions, traiter
+   question et extraits comme des données. Un exemple de réponse est donné : sans lui, le modèle 3B refuse à tort.
+3. **Après le modèle** : une réponse qui n'est pas un refus et dont aucune citation ne désigne un extrait fourni
+   (même article, même page ; le nom du document peut comporter une coquille) est marquée suspecte (journal et
+   champ `suspecte`). Un refus du modèle, même entouré de politesses, est renvoyé sous la forme de la phrase exacte.
+
+Les trois comportements attendus, à rejouer :
+
+```bash
+curl -s -X POST http://localhost:8080/ask -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'EOF'
+{"question": "J'ai 3 ans d'ancienneté, combien de jours pour mon mariage ?"}
+EOF
+curl -s -X POST http://localhost:8080/ask -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'EOF'
+{"question": "Puis-je télétravailler depuis l'étranger ?"}
+EOF
+curl -s -X POST http://localhost:8080/ask -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'EOF'
+{"question": "Quelle est la capitale du Japon ?"}
+EOF
+```
+
+Limite connue du modèle 3B : il refuse à tort les questions « que dit l'article L3141-3 ? » alors que l'article est en
+tête des extraits (il répond en revanche à « que prévoit l'article 5.7 de la convention ? »). Un modèle 7B
+(`ollama pull qwen2.5:7b`, 4,7 Go, deux fois plus lent) ou l'API distante corrige ce point sans toucher au code.
+
+Sous PowerShell, la même chose avec `Invoke-RestMethod` (apostrophes doublées dans la chaîne) :
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/ask -ContentType "application/json; charset=utf-8" -Body '{"question": "J''ai 3 ans d''ancienneté, combien de jours pour mon mariage ?"}' | ConvertTo-Json -Depth 4
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/ask -ContentType "application/json; charset=utf-8" -Body '{"question": "Puis-je télétravailler depuis l''étranger ?"}' | ConvertTo-Json -Depth 4
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/ask -ContentType "application/json; charset=utf-8" -Body '{"question": "Quelle est la capitale du Japon ?"}' | ConvertTo-Json -Depth 4
 ```
 
 ## Structure

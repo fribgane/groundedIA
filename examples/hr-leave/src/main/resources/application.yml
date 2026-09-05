@@ -32,6 +32,24 @@ ollama:
   base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
   embedding-model: bge-m3
 
+# Génération : llm.provider = local (Ollama sur le poste) | api (API distante compatible OpenAI). C'est la seule
+# ligne qui change entre les deux ; le reste du code ne connaît que l'interface LlmClient.
+# La clé de l'API distante est lue dans la variable d'environnement LLM_API_KEY, jamais dans un fichier versionné.
+llm:
+  provider: local
+  local:
+    model: qwen2.5:3b
+  api:
+    base-url: https://api.mistral.ai/v1
+    model: mistral-small-latest
+
+# Réponse : nombre de morceaux fournis au LLM, et seuil de confiance de la recherche en dessous duquel on refuse
+# sans appeler le LLM. Mesuré sur bge-m3 avec 24 questions : couvertes ≥ 0,615, hors sujet ≤ 0,547 ; 0,58 est au
+# milieu de l'écart. À remesurer si le modèle d'embedding ou le corpus change.
+reponse:
+  morceaux: 5
+  seuil: 0.58
+
 # Recherche : vector | fulltext | hybrid (fusion RRF des deux classements). Le mode peut être forcé par
 # le paramètre mode= de GET /search. limit : résultats renvoyés. En hybride, profondeur de chaque classement
 # fusionné : la liste vectorielle reste pertinente en profondeur, la liste plein texte en « ou » ne l'est qu'en tête

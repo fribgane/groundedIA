@@ -20,6 +20,25 @@ import fr.groundedia.core.embedding.EmbeddingClient;
 @Service
 public class RechercheService {
 
+    /**
+     * Le résultat de la recherche hybride, avec ce qu'il faut pour décider si le corpus couvre la question :
+     * la meilleure similarité cosinus, la meilleure densité lexicale (dans [0, 1[ : n/(n+10) pour n occurrences
+     * des lemmes de la question dans le meilleur morceau), et si un morceau porte en titre l'article que la question
+     * cite (un article seulement cité par d'autres morceaux ne compte pas : le corpus ne le contient pas).
+     */
+    public record RechercheDetaillee(List<Resultat> morceaux, double similariteMax, double lexicalMax,
+                                     boolean referenceTrouvee) {
+
+        /**
+         * Confiance dans [0, 1] : le corpus couvre la question si au moins une des deux recherches y répond avec
+         * force. Article cité présent en titre = 1 (ses morceaux sont fournis au modèle, dont la consigne garantit
+         * alors seule le refus) ; sinon le maximum de la similarité cosinus et de la densité lexicale.
+         */
+        public double confiance() {
+            return referenceTrouvee ? 1.0 : Math.max(similariteMax, lexicalMax);
+        }
+    }
+
     private final EmbeddingClient embeddings;
     private final RechercheRepository depot;
     private final Mode modeParDefaut;
@@ -50,16 +69,33 @@ public class RechercheService {
     }
 
     public List<Resultat> rechercher(String question, Mode mode, int limite) {
-        if (question == null || question.isBlank()) {
-            throw new IllegalArgumentException("La question est vide");
-        }
+        verifier(question);
         return switch (mode) {
             case VECTOR -> vectorielle(question, limite);
             case FULLTEXT -> pleinTexte(question, limite);
-            case HYBRID -> Rrf.fusionner(
-                    List.of(vectorielle(question, candidatsVectoriels), pleinTexte(question, candidatsPleinTexte)),
-                    limite);
+            case HYBRID -> hybride(question, limite).morceaux();
         };
+    }
+
+    /** La recherche hybride, avec les signaux de confiance dont la génération de réponse a besoin. */
+    public RechercheDetaillee hybride(String question, int limite) {
+        verifier(question);
+        List<Resultat> vectoriels = vectorielle(question, candidatsVectoriels);
+        String reference = ReferencesArticles.expressionPostgres(question);
+        List<Resultat> lexicaux = depot.pleinTexte(question, reference, candidatsPleinTexte);
+        double similariteMax = vectoriels.isEmpty() ? 0 : vectoriels.getFirst().score();
+        // score lexical = densité dans [0, 1[ + bonus entier (2 : titre, 1 : citation) quand une référence est cherchée
+        double scoreLexical = lexicaux.isEmpty() ? 0 : lexicaux.getFirst().score();
+        boolean referenceTrouvee = scoreLexical >= 2;
+        double lexicalMax = scoreLexical % 1;
+        return new RechercheDetaillee(Rrf.fusionner(List.of(vectoriels, lexicaux), limite),
+                similariteMax, lexicalMax, referenceTrouvee);
+    }
+
+    private static void verifier(String question) {
+        if (question == null || question.isBlank()) {
+            throw new IllegalArgumentException("La question est vide");
+        }
     }
 
     private List<Resultat> vectorielle(String question, int limite) {

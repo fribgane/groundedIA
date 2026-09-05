@@ -123,6 +123,37 @@ docker-compose.yml      PostgreSQL 16 + pgvector (image pgvector/pgvector), volu
 - Test comparatif `RechercheComparativeTest` (examples/hr-leave) : dix questions, cinq en langage naturel, cinq
   avec référence exacte ; activé par `-Dcomparatif=true` car il exige la base, les embeddings et Ollama.
 
+## Réponse ancrée (étape 3)
+
+- Package `fr.groundedia.core.llm` : `LlmClient` (interface maison : `generer(consigne, message)` → texte + jetons),
+  `OllamaLlmClient` (`POST /api/chat`, température 0, graine fixe, `num_ctx` 8192, actif si `llm.provider=local`,
+  valeur par défaut), `ApiLlmClient` (`POST {llm.api.base-url}/chat/completions`, compatible OpenAI, actif si
+  `llm.provider=api`, clé lue par Spring depuis l'environnement : variable `LLM_API_KEY` ou `.env` local non
+  versionné, démarrage refusé sans clé). **Rien d'autre ne change entre les deux** : `LlmClientSelectionTest` le
+  prouve, ne pas introduire de code spécifique à un fournisseur ailleurs. Ollama reste nécessaire dans les deux cas
+  pour les embeddings (bge-m3) : seule la génération bascule.
+- Package `fr.groundedia.core.reponse` : `ReponseService` (recherche hybride de `reponse.morceaux` = 5 morceaux,
+  prompt, appel, contrôle) et `ReponseController` (`POST /ask {"question"}`).
+- Garde-fous, dans l'ordre : (1) confiance n'atteignant pas `reponse.seuil` (0,58) → refus **sans appel au LLM**
+  (garde fermée par défaut : `!(confiance >= seuil)`) ; la confiance vient de `RechercheService.hybride()` :
+  max(similarité cosinus du 1er vectoriel, densité lexicale du 1er plein texte, dans [0, 1[), ou 1 si un morceau
+  porte en titre l'article que la question cite (un article seulement cité par d'autres morceaux ne compte pas) ;
+  (2) la consigne système (`ReponseService.CONSIGNE_SYSTEME`), avec un exemple de réponse : sans exemple, le modèle
+  3B refuse à tort ; (3) réponse non-refus dont aucune citation ne désigne un extrait fourni (même article, même
+  page, nom du document ignoré) → `suspecte` (journal + champ), seules les citations fondées sont renvoyées.
+  Phrase de refus : constante `ReponseService.REFUS`, renvoyée telle quelle dès que le modèle refuse (détection
+  tolérante à l'apostrophe, la casse et le point final).
+- Le seuil 0,58 est calibré sur 24 questions mesurées avec des chaînes UTF-8 correctes (couvertes ≥ 0,615, hors
+  sujet ≤ 0,547) : toute modification du modèle d'embedding ou du corpus impose de remesurer (voir README).
+  Attention : le `curl` de Git Bash (7.87, sans Unicode) envoie les accents en cp1252 et fausse toute mesure ;
+  passer le JSON par l'entrée standard, ou utiliser `Invoke-RestMethod` / node.
+- Les journaux ne contiennent pas le texte des questions (données RH) au niveau INFO/WARN, seulement au niveau DEBUG.
+- Modèle local par défaut `qwen2.5:3b` (1,9 Go, tenable sur 16 Go sans GPU) ; mesuré : 45 à 60 s par question
+  sur processeur (≈ 2 400 jetons de prompt, 70 de réponse), moins de 10 s si le prompt est en cache, ≈ 110 ms pour
+  un refus sans appel au modèle. Réponses reproductibles à température 0 avec graine fixe (mode local).
+  Limite connue : le 3B refuse à tort « que dit l'article L3141-3 ? » même avec l'extrait en tête et une consigne
+  dédiée (testé) ; ne pas retoucher la consigne pour ce cas, passer à un 7B ou à l'API.
+
 ## Conventions de code
 
 - Langue : documentation, commentaires, messages et vocabulaire métier en **français** (tables, colonnes,
@@ -151,6 +182,7 @@ docker compose exec postgres psql -U groundedia -d groundedia -c 'DELETE FROM do
 .\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--embed"   # même chose sous PowerShell (guillemets obligatoires)
 curl "http://localhost:8080/search?q=que+dit+l+article+L3141-3&mode=fulltext"   # recherche (mode : vector | fulltext | hybrid)
 ./mvnw test -pl examples/hr-leave -am -Dcomparatif=true      # test comparatif des trois modes (base + Ollama requis ; -am construit core)
+curl -s -X POST http://localhost:8080/ask -H "Content-Type: application/json; charset=utf-8" -d '{"question": "Quelle est la capitale du Japon ?"}'   # réponse ancrée (refus attendu)
 ./mvnw -q package                                 # build complet de tous les modules (tests compris)
 ./mvnw -q test -pl core                           # tests unitaires du socle
 ./mvnw clean                                      # obligatoire après suppression ou renommage d'une migration :

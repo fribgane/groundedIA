@@ -39,3 +39,6 @@ documents/
 
 # Claude Code : réglages locaux
 .claude/settings.local.json
+
+# Vidages de pile de Git Bash (plantage d'un outil), sans rapport avec le projet
+*.stackdump
