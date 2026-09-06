@@ -35,20 +35,25 @@ ollama:
 # Génération : llm.provider = local (Ollama sur le poste) | api (API distante compatible OpenAI). C'est la seule
 # ligne qui change entre les deux ; le reste du code ne connaît que l'interface LlmClient.
 # La clé de l'API distante est lue dans la variable d'environnement LLM_API_KEY, jamais dans un fichier versionné.
+# Modèle local : qwen2.5:7b (4,7 Go, ≈ 2 min par question sur processeur) applique les règles à la situation du
+# salarié ; qwen2.5:3b (1,9 Go, ≈ 1 min) suffit pour les questions sans salarié mais se trompe dans les calculs.
 llm:
   provider: local
   local:
-    model: qwen2.5:3b
+    model: qwen2.5:7b
   api:
     base-url: https://api.mistral.ai/v1
     model: mistral-small-latest
 
-# Réponse : nombre de morceaux fournis au LLM, et seuil de confiance de la recherche en dessous duquel on refuse
-# sans appeler le LLM. Mesuré sur bge-m3 avec 24 questions : couvertes ≥ 0,615, hors sujet ≤ 0,547 ; 0,58 est au
-# milieu de l'écart. À remesurer si le modèle d'embedding ou le corpus change.
+# Réponse : nombre de morceaux fournis au LLM ; garde-fou avant le LLM : la question est couverte si la similarité
+# cosinus du meilleur morceau atteint seuil-similarite OU si sa densité lexicale atteint seuil-lexical (ou si elle
+# cite un article présent). Mesuré sur bge-m3 avec 31 questions : hors sujet ≤ 0,547 et ≤ 0,333, couvertes ≥ 0,618
+# ou ≥ 0,444. À remesurer si le modèle d'embedding ou le corpus change. source-documents : libellé du bloc des extraits.
 reponse:
   morceaux: 5
-  seuil: 0.58
+  seuil-similarite: 0.58
+  seuil-lexical: 0.40
+  source-documents: convention collective et Code du travail
 
 # Recherche : vector | fulltext | hybrid (fusion RRF des deux classements). Le mode peut être forcé par
 # le paramètre mode= de GET /search. limit : résultats renvoyés. En hybride, profondeur de chaque classement
@@ -65,3 +70,6 @@ management:
     web:
       exposure:
         include: health
+
+server:
+  port: 8081

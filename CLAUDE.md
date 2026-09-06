@@ -134,25 +134,121 @@ docker-compose.yml      PostgreSQL 16 + pgvector (image pgvector/pgvector), volu
   pour les embeddings (bge-m3) : seule la génération bascule.
 - Package `fr.groundedia.core.reponse` : `ReponseService` (recherche hybride de `reponse.morceaux` = 5 morceaux,
   prompt, appel, contrôle) et `ReponseController` (`POST /ask {"question"}`).
-- Garde-fous, dans l'ordre : (1) confiance n'atteignant pas `reponse.seuil` (0,58) → refus **sans appel au LLM**
-  (garde fermée par défaut : `!(confiance >= seuil)`) ; la confiance vient de `RechercheService.hybride()` :
-  max(similarité cosinus du 1er vectoriel, densité lexicale du 1er plein texte, dans [0, 1[), ou 1 si un morceau
-  porte en titre l'article que la question cite (un article seulement cité par d'autres morceaux ne compte pas) ;
-  (2) la consigne système (`ReponseService.CONSIGNE_SYSTEME`), avec un exemple de réponse : sans exemple, le modèle
-  3B refuse à tort ; (3) réponse non-refus dont aucune citation ne désigne un extrait fourni (même article, même
-  page, nom du document ignoré) → `suspecte` (journal + champ), seules les citations fondées sont renvoyées.
+- Garde-fous, dans l'ordre : (1) question non couverte → refus **sans appel au LLM** (garde fermée par défaut,
+  décision dans `ReponseService.confiance()`) ; couverte si similarité cosinus du 1er vectoriel ≥
+  `reponse.seuil-similarite` (0,58), **ou** densité lexicale du 1er plein texte (n/(n+10), dans [0, 1[) ≥
+  `reponse.seuil-lexical` (0,40), **ou** un morceau porte en titre l'article que la question cite (un article
+  seulement cité par d'autres morceaux ne compte pas ; article cité absent du corpus → la recherche lexicale repart
+  sur les mots de la question). Les signaux viennent de `RechercheService.hybride()` (`RechercheDetaillee`), la
+  décision reste dans `reponse` ; (2) la consigne système (`ReponseService.CONSIGNE_SYSTEME`), avec un exemple de
+  réponse : sans exemple, le modèle 3B refuse à tort ; (3) réponse non-refus dont aucune citation ne désigne un
+  extrait fourni (même article, même page, nom du document ignoré) et sans marque « (source : base de données RH) »
+  quand une situation est fournie → `suspecte` (journal + champ), seules les citations fondées sont renvoyées.
   Phrase de refus : constante `ReponseService.REFUS`, renvoyée telle quelle dès que le modèle refuse (détection
   tolérante à l'apostrophe, la casse et le point final).
-- Le seuil 0,58 est calibré sur 24 questions mesurées avec des chaînes UTF-8 correctes (couvertes ≥ 0,615, hors
-  sujet ≤ 0,547) : toute modification du modèle d'embedding ou du corpus impose de remesurer (voir README).
+- Les seuils 0,58 / 0,40 sont calibrés sur 31 questions mesurées avec des chaînes UTF-8 correctes (hors sujet
+  ≤ 0,547 et ≤ 0,333 ; couvertes ≥ 0,618 ou ≥ 0,444 ; « Combien de jours pour mon mariage ? » = 0,560 / 0,524 passe
+  par la densité) : toute modification du modèle d'embedding ou du corpus impose de remesurer (voir README).
   Attention : le `curl` de Git Bash (7.87, sans Unicode) envoie les accents en cp1252 et fausse toute mesure ;
   passer le JSON par l'entrée standard, ou utiliser `Invoke-RestMethod` / node.
 - Les journaux ne contiennent pas le texte des questions (données RH) au niveau INFO/WARN, seulement au niveau DEBUG.
-- Modèle local par défaut `qwen2.5:3b` (1,9 Go, tenable sur 16 Go sans GPU) ; mesuré : 45 à 60 s par question
-  sur processeur (≈ 2 400 jetons de prompt, 70 de réponse), moins de 10 s si le prompt est en cache, ≈ 110 ms pour
-  un refus sans appel au modèle. Réponses reproductibles à température 0 avec graine fixe (mode local).
-  Limite connue : le 3B refuse à tort « que dit l'article L3141-3 ? » même avec l'extrait en tête et une consigne
-  dédiée (testé) ; ne pas retoucher la consigne pour ce cas, passer à un 7B ou à l'API.
+- Modèle local par défaut `qwen2.5:7b` depuis l'étape 4 (4,7 Go, tenable sur 16 Go sans GPU ; 100 à 130 s par
+  question sur processeur, ≈ 2 400 à 2 800 jetons de prompt). `qwen2.5:3b` (1,9 Go, 45 à 60 s) reste utilisable
+  pour les questions sans salarié mais se trompe dans tout calcul (paliers, soustraction). Moins de 10 s si le
+  prompt est en cache, ≈ 110 ms pour un refus sans appel au modèle. Réponses reproductibles à température 0 avec
+  graine fixe (mode local). Limite connue : le 3B refuse à tort « que dit l'article L3141-3 ? » même avec l'extrait
+  en tête et une consigne dédiée (testé) ; ne pas retoucher la consigne pour ce cas.
+- Les exemples de la consigne sont **fictifs** (`accord.pdf`, article 12, déménagement ; solde 8 / 10 jours) : s'ils
+  fuient dans une réponse, la citation ne désigne aucun extrait fourni et la réponse est marquée suspecte. Un exemple
+  réel (5.7, p. 26) rendait cette fuite invisible. Le 3B avait besoin d'un exemple réel pour ne pas refuser ; le 7B non.
+
+## Réponse personnalisée (étape 4)
+
+- Le socle ne connaît pas la table `salarie` : `Situation` (liste de champs libellés) et l'interface
+  `SituationProvider` sont dans `fr.groundedia.core.reponse` ; `ReponseController` résout `salarieId` par le
+  `SituationProvider` disponible (400 si absent ou inconnu) et `ReponseService.repondre(question, situation)`
+  construit le prompt : la question entre « », puis le bloc `SITUATION DU SALARIÉ (source : base de données RH)`
+  (constantes `TITRE_SITUATION` / `SOURCE_SITUATION`, une ligne « - libellé : valeur » par champ), puis
+  `EXTRAITS DE DOCUMENTS (source : <reponse.source-documents>)`. Question et valeurs sont aplaties sur une ligne :
+  aucune donnée ne peut imiter un bloc. La réponse renvoie `situation` et `citations` séparément.
+- Le cas d'usage porte les données métier dans `fr.groundedia.examples.hrleave.salarie` : `Salarie`,
+  `SalarieRepository` (requête constante `REQUETE` = colonnes nommées `COLONNES` + `WHERE id = :id`), `Anciennete`
+  (années et mois, en Java, à la date de l'horloge injectée, aussi en années décimales « soit 7,5 années » : le 7B
+  compare mieux 7,5 à cinq et dix que « 7 ans et 6 mois »), `SituationSalarieService` (les champs autorisés, dans
+  `CHAMPS_AUTORISES` : date d'embauche, ancienneté, contrat, statut, temps de travail, solde, convention ; statut
+  traduit dans le vocabulaire Syntec « ingénieurs et cadres » / « ETAM » seulement si la convention est Syntec ;
+  convention absente = « non renseignée » ; solde en « jours ouvrés », l'unité de `salarie.solde_conges`).
+- **Règle de sécurité** : le modèle ne voit que le salarié demandé et que les champs autorisés. **Le nom n'en fait
+  pas partie** : aucune règle n'en dépend et une donnée nominative ne doit pas partir vers une API distante. Toute
+  colonne ajoutée passe par `COLONNES` et `CHAMPS_AUTORISES`, et `SecuriteDonneesSalarieTest` le vérifie (prompt
+  sans aucun nom ni trace d'un autre salarié, liste de champs exacte, `REQUETE` exacte sans `*`).
+- Périmètre assumé : pas d'authentification, `salarieId` est un paramètre libre et la situation est renvoyée dans
+  la réponse (même en cas de refus). Le cloisonnement garanti est celui du modèle, pas celui de l'appelant ; en
+  production l'identifiant vient de l'identité authentifiée (étape 5 de la feuille de route).
+- La consigne (règle 6) demande d'écrire le calcul, de ne retenir que le palier d'ancienneté le plus élevé atteint,
+  de donner l'écart pour un solde, de répondre aux questions de solde et d'ancienneté depuis la situation, et fait
+  prévaloir la situation sur ce que la question affirme. Ce qui vient de la base est marqué
+  « (source : base de données RH) » ; cette marque compte comme ancrage pour le contrôle `suspecte`.
+- Le corpus ne fait pas dépendre le congé de mariage de l'ancienneté (4 jours pour tous) : ne pas essayer de faire
+  dire « 5 jours » au système. Les règles à ancienneté réelles sont l'article 5.1 (congés d'ancienneté) et 9.2
+  (maintien de salaire) de la convention Syntec. Le morceau des paliers du 5.1 n'est remonté que si la question
+  évoque l'ancienneté : la question courte « Combien de jours de congés payés ai-je par an ? » ne le place pas dans
+  les cinq extraits et le modèle répond alors 25 jours à tous.
+- Mesuré le 2026-09-05 avec qwen2.5:7b via `POST /ask` : mariage 4 j pour les deux ✓ ; solde « il manque 2,5 » /
+  « il manque 11 » ✓ (avec une citation d'extrait superflue) ; « Ai-je des jours de congés supplémentaires grâce à
+  mon ancienneté ? » → Amina 1 jour (palier 5 ans), Marc aucun ✓ ; « Combien de jours de congés payés ai-je par an,
+  avec mon ancienneté ? » → Marc 25 ✓ mais Amina 27 ✗ (mauvais palier). Questions de démonstration : les trois
+  premières ; le total annuel demande l'API. Ne pas retoucher la consigne sans rejouer ces huit questions.
+
+## Évaluation (étape 5)
+
+- Module `eval`, package `fr.groundedia.eval`, **autonome** : aucune dépendance sur `core` ni `hr-leave`, il évalue
+  l'application par HTTP (`GET /actuator/health`, `POST /ask`) comme un client ; c'est ce qui permet
+  `./mvnw -pl eval test -Dtest=GoldenSetRunner` sans `-am` ni `install`. Ne pas y introduire de dépendance interne.
+- Fichiers à la racine du module (Maven exécute les tests depuis `eval/`) : `golden-set.yaml` (listes `famille_a`,
+  `famille_b`, `famille_c` ; champs `id`, `question`, `reponse_attendue`, `source_attendue` objet ou liste
+  d'alternatives `{document, article}`, `salarieId` en B, `commentaire`), `regression-set.yaml` (`bloquants` :
+  `id`, `promu_le`, `motif`), `evaluation.md` (généré, versionné : c'est le livrable). Champ inconnu = erreur de lecture.
+- Classes : `JeuDeCas` / `Regression` (lecture YAML, validation), `AskClient` (RestClient, lecture 15 min,
+  `verifierDisponible()` distingue injoignable et non saine), `Evaluateur` (décision par famille + cause probable
+  déduite des signaux de l'API : garde / modèle via `confiance.couverte`, passage attendu fourni ou non, citation ;
+  une panne de l'application ou du juge sur un cas donne un résultat `nonMesurable`, la campagne continue), `Juge` +
+  `OllamaJuge` (`/api/chat`, température 0, graine 42, `verifierDisponible()` via `/api/tags`, consigne stricte
+  binaire « CORRECT : … » / « INCORRECT : … » qui tranche chiffres en lettres, décimales, unités et valeurs multiples,
+  parsée par `Verdict`, féminin toléré), `Sources` (article + document, sans casse ni espaces, point gardé dans un
+  numéro : « 1.2 » ≠ « 12 », « 5.7 » ≠ « 5.75 », « L. 3141-5 » ≠ « L. 3141-5-1 »), `Metriques` (latences et jetons sur
+  les seules questions ayant appelé le modèle, refus de la garde comptés à part, p95 au rang le plus proche, coût =
+  jetons × prix configurés, `nonMesurables`), `Rapport` (markdown pour non-développeur, bandeau « en cours », note du
+  cas dans chaque échec, définitions de garde / similarité / densité / suspecte), `Configuration` (propriétés
+  système `-Deval.*` seulement : `base-url` défaut `http://localhost:8081`, `juge.base-url`, `juge.model` défaut
+  `qwen2.5:7b`, `prix.entree-par-million`, `prix.sortie-par-million` (virgule acceptée), chemins des trois fichiers),
+  `Git` (commit court, drapeau modifications locales).
+- Réussite : C = `refus` vrai (code) ; A/B = pas de refus, verdict CORRECT du juge, réponse non `suspecte`, et si des
+  sources sont attendues au moins une citation renvoyée en désigne une (une bonne réponse mal sourcée ou non ancrée
+  est un échec, la règle est écrite dans le rapport). Les refus, l'ancrage et les citations ne passent jamais par le
+  juge. Verdict illisible ou erreur technique = échec `nonMesurable`, compté à part dans le rapport. Latence =
+  `latenceMs` de l'application.
+- `GoldenSetRunner` (test JUnit) est exclu par surefire dans `eval/pom.xml` (`<excludes>`) : le build ordinaire ne le
+  lance pas, `-Dtest=GoldenSetRunner` l'emporte sur l'exclusion. Il vérifie application et juge avant de commencer,
+  refuse un jeu vide, réécrit le rapport après chaque cas et échoue **après** l'avoir écrit si un cas bloquant a
+  échoué. Durée : ≈ 2 à 3 min par cas A/B avec qwen2.5:7b sur processeur (réponse + juge), ≈ 1 h pour 30 cas.
+- `GoldenSetFichierTest` (build ordinaire) relit le vrai `golden-set.yaml` : répartition ≤ 20/20/10, cas
+  obligatoires présents (Japon, télétravail, couple 1/2), chaque bloquant existe. YAML : toute valeur contenant « : »
+  doit être entre guillemets.
+- Les cas B dépendent de la date (ancienneté) : les réponses attendues sont calculées au 2026-09-05 et restent
+  vraies tant qu'aucun salarié de test ne franchit un palier (prochain : Julie 10 ans en 2031, Amina 10 ans le
+  2029-03-01). Marc (embauché le 2024-09-15) passe 2 ans le 2026-09-15 : aucune règle du corpus ne change à 2 ans.
+- Ne jamais ajuster les réponses attendues pour faire monter le score : un cas douteux se corrige après relecture
+  du morceau (`SELECT texte FROM chunk WHERE id = …`), et la correction se note dans `commentaire`. Une réponse
+  attendue se limite au fait vérifiable (chiffre, conclusion) : le raisonnement va dans `commentaire`, sinon le juge
+  exige qu'il soit récité (constaté le 2026-09-05 sur B01).
+- Campagnes du 2026-09-05 (qwen2.5:7b, juge qwen2.5:7b, 30 cas) : premier passage interrompu à 18 cas (8/18 ; A 3/12,
+  B 5/6), second passage complet mais Ollama puis Docker tués par manque de mémoire à partir du 14e cas (8/30, 14 non
+  mesurables ; A 4/12 mesurés en entier, B 4/4 mesurés, C non mesuré). Échecs réels et reproductibles en A : A01
+  (répond « 6 jours de recherche d'emploi »), A03 (refus, passage fourni), A04/A10 (recherche ne remonte pas 5.2 /
+  L. 3141-7), A05 (lit mal les seuils du 5.1), A11 (Syntec 7 j au lieu du Code 14 j), A08/A09 (jugés inexacts).
+  Une campagne complète demande ≈ 8 Go libres pendant 2 h (≈ 4 min par cas A/B) : fermer navigateur et IDE, ou
+  machine dédiée. Résultats reproductibles d'un passage à l'autre (température 0, graine fixe).
 
 ## Conventions de code
 
@@ -183,6 +279,8 @@ docker compose exec postgres psql -U groundedia -d groundedia -c 'DELETE FROM do
 curl "http://localhost:8080/search?q=que+dit+l+article+L3141-3&mode=fulltext"   # recherche (mode : vector | fulltext | hybrid)
 ./mvnw test -pl examples/hr-leave -am -Dcomparatif=true      # test comparatif des trois modes (base + Ollama requis ; -am construit core)
 curl -s -X POST http://localhost:8080/ask -H "Content-Type: application/json; charset=utf-8" -d '{"question": "Quelle est la capitale du Japon ?"}'   # réponse ancrée (refus attendu)
+./mvnw -pl eval test -Dtest=GoldenSetRunner       # évaluation complète (application démarrée requise) → eval/evaluation.md ; ≈ 1 h
+./mvnw -pl eval test -Dtest=GoldenSetRunner -Deval.base-url=http://localhost:8080   # si l'application écoute ailleurs que sur server.port
 ./mvnw -q package                                 # build complet de tous les modules (tests compris)
 ./mvnw -q test -pl core                           # tests unitaires du socle
 ./mvnw clean                                      # obligatoire après suppression ou renommage d'une migration :

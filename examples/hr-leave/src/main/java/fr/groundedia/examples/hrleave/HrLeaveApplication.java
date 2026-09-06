@@ -1,11 +1,13 @@
 package fr.groundedia.examples.hrleave;
 
+import java.time.Clock;
 import java.util.Arrays;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Bean;
 
 /**
  * Point d'entrée du cas d'usage « hr-leave » : questions sur les congés, ancrées sur les documents RH
@@ -30,5 +32,11 @@ public class HrLeaveApplication {
         if (commande) {
             contexte.close();
         }
+    }
+
+    /** L'horloge du système : injectée pour que l'ancienneté « à ce jour » soit testable à date fixe. */
+    @Bean
+    Clock horloge() {
+        return Clock.systemDefaultZone();
     }
 }

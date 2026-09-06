@@ -1,0 +1,11 @@
+# Jeu de non-régression : les cas du golden-set promus « bloquants ».
+# Si l'un d'eux échoue, ./mvnw -pl eval test -Dtest=GoldenSetRunner échoue (le rapport est écrit quand même).
+# Pour promouvoir un échec : ajouter son id, la date et le motif, en français lisible (le motif est repris dans le rapport).
+# Ne promouvoir que des cas relus à la main.
+bloquants:
+  - id: C01
+    promu_le: 2026-09-05
+    motif: question de culture générale (capitale du Japon) que le système doit refuser sans même consulter le modèle
+  - id: C02
+    promu_le: 2026-09-05
+    motif: question RH hors des documents (télétravail depuis l'étranger) que le système doit refuser

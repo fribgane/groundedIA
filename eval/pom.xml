@@ -12,7 +12,54 @@
 
     <artifactId>groundedia-eval</artifactId>
     <name>groundedIA :: eval</name>
-    <description>Le harnais d'évaluation : mesure automatique de la fiabilité des réponses (ancrage, citations, refus)</description>
+    <description>Le harnais d'évaluation : mesure automatique de la fiabilité des réponses (justesse, citations, refus, latence, coût)</description>
 
-    <!-- Bibliothèque : ses dépendances seront ajoutées à l'étape 8 (harnais d'évaluation). -->
+    <!--
+      Le harnais évalue l'application de l'extérieur, par son API HTTP (POST /ask), comme le ferait un client : il ne
+      dépend d'aucun autre module du projet. Il se lance seul : ./mvnw -pl eval test -Dtest=GoldenSetRunner
+    -->
+    <dependencies>
+        <!-- Journalisation (Logback) : le harnais n'a ni contexte Spring ni serveur web, il n'en garde que le journal. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!-- RestClient : appels HTTP vers l'application évaluée (POST /ask) et vers Ollama pour le juge. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <!-- Jackson : lecture des réponses JSON de l'application et d'Ollama. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+        <!-- Lecture des jeux d'évaluation YAML (golden-set.yaml, regression-set.yaml) avec le même Jackson. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+        <!-- Tests unitaires du harnais (JUnit 5, AssertJ) : ils ne demandent ni base, ni Ollama, ni application. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- L'exécuteur du jeu de référence exige l'application démarrée, la base et Ollama, et dure une heure :
+                         il ne tourne que sur demande explicite (-Dtest=GoldenSetRunner), jamais dans le build ordinaire. -->
+                    <excludes>
+                        <exclude>**/GoldenSetRunner.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

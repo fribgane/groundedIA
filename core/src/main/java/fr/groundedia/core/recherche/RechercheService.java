@@ -21,22 +21,14 @@ import fr.groundedia.core.embedding.EmbeddingClient;
 public class RechercheService {
 
     /**
-     * Le résultat de la recherche hybride, avec ce qu'il faut pour décider si le corpus couvre la question :
-     * la meilleure similarité cosinus, la meilleure densité lexicale (dans [0, 1[ : n/(n+10) pour n occurrences
-     * des lemmes de la question dans le meilleur morceau), et si un morceau porte en titre l'article que la question
-     * cite (un article seulement cité par d'autres morceaux ne compte pas : le corpus ne le contient pas).
+     * Le résultat de la recherche hybride, avec les signaux dont la génération de réponse a besoin pour décider si le
+     * corpus couvre la question : la meilleure similarité cosinus, la meilleure densité lexicale (dans [0, 1[ :
+     * n/(n+10) pour n occurrences des lemmes de la question dans le meilleur morceau), et si un morceau porte en
+     * titre l'article que la question cite (un article seulement cité par d'autres morceaux ne compte pas : le
+     * corpus ne le contient pas). La décision elle-même appartient à {@code ReponseService}.
      */
     public record RechercheDetaillee(List<Resultat> morceaux, double similariteMax, double lexicalMax,
                                      boolean referenceTrouvee) {
-
-        /**
-         * Confiance dans [0, 1] : le corpus couvre la question si au moins une des deux recherches y répond avec
-         * force. Article cité présent en titre = 1 (ses morceaux sont fournis au modèle, dont la consigne garantit
-         * alors seule le refus) ; sinon le maximum de la similarité cosinus et de la densité lexicale.
-         */
-        public double confiance() {
-            return referenceTrouvee ? 1.0 : Math.max(similariteMax, lexicalMax);
-        }
     }
 
     private final EmbeddingClient embeddings;
@@ -83,10 +75,15 @@ public class RechercheService {
         List<Resultat> vectoriels = vectorielle(question, candidatsVectoriels);
         String reference = ReferencesArticles.expressionPostgres(question);
         List<Resultat> lexicaux = depot.pleinTexte(question, reference, candidatsPleinTexte);
-        double similariteMax = vectoriels.isEmpty() ? 0 : vectoriels.getFirst().score();
         // score lexical = densité dans [0, 1[ + bonus entier (2 : titre, 1 : citation) quand une référence est cherchée
         double scoreLexical = lexicaux.isEmpty() ? 0 : lexicaux.getFirst().score();
         boolean referenceTrouvee = scoreLexical >= 2;
+        if (!reference.isEmpty() && !referenceTrouvee) {
+            // l'article cité n'est pas dans le corpus (numéro erroné ?) : on cherche quand même les mots de la question
+            lexicaux = depot.pleinTexte(question, "", candidatsPleinTexte);
+            scoreLexical = lexicaux.isEmpty() ? 0 : lexicaux.getFirst().score();
+        }
+        double similariteMax = vectoriels.isEmpty() ? 0 : vectoriels.getFirst().score();
         double lexicalMax = scoreLexical % 1;
         return new RechercheDetaillee(Rrf.fusionner(List.of(vectoriels, lexicaux), limite),
                 similariteMax, lexicalMax, referenceTrouvee);

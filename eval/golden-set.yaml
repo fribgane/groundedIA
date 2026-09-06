@@ -1,0 +1,262 @@
+# Jeu de référence de groundedIA : 50 cas en trois familles, lancés par ./mvnw -pl eval test -Dtest=GoldenSetRunner
+#
+# Comment écrire un cas :
+#   id                : unique, stable (c'est lui que regression-set.yaml désigne) ; A.., B.., C.. selon la famille.
+#   question          : telle qu'un salarié ou un RH la poserait.
+#   reponse_attendue  : ce qu'une réponse juste DOIT contenir, et rien de plus : chiffres, durées, conclusion oui/non.
+#                       Le juge exige chaque information de ce texte ; les nuances vont dans « commentaire ».
+#   source_attendue   : { document, article } — document = sous-chaîne du nom du fichier (syntec, legislative,
+#                       reglementaire), article = numéro tel qu'il figure dans le titre du morceau (5.7, L. 3142-4,
+#                       D. 3141-5). Une liste = plusieurs sources également valables, en citer une suffit.
+#   salarieId         : famille B seulement (1 = cadre CDI 100 %, embauche 2019-03-01, solde 12,5 ; 2 = ETAM CDI 100 %,
+#                       2024-09-15, solde 4 ; 3 = ETAM CDD 80 %, 2021-01-10, solde 8,5 ; tous en convention Syntec).
+#   commentaire       : libre — morceau source (id), nuance, piège, date de validité.
+#
+# Les 30 premiers cas ont été écrits à partir des morceaux réellement ingérés (table chunk) et chaque réponse a été
+# relue contre le texte exact du morceau. Les réponses de la famille B sont calculées au 5 septembre 2026 et restent
+# vraies tant qu'aucun salarié de test ne franchit un palier (Amina 10 ans le 2029-03-01 ; Marc 5 ans le 2029-09-15).
+#
+# À COMPLÉTER À LA MAIN : 8 cas A (A13 à A20), 8 cas B (B13 à B20), 4 cas C (C07 à C10).
+
+famille_a:
+  - id: A01
+    question: "Je me pacse le mois prochain : à combien de jours d'absence ai-je droit ?"
+    reponse_attendue: "4 jours ouvrés."
+    source_attendue:
+      - { document: syntec, article: "5.7" }
+      - { document: legislative, article: L. 3142-4 }
+    commentaire: >-
+      Syntec 5.7 p. 26 (morceau 3082) : « se marier ou conclure un pacte civil de solidarité (PACS) : quatre (4) jours
+      ouvrés », non déductibles des congés, sans réduction de salaire. Le Code (L. 3142-4) donne le même minimum.
+
+  - id: A02
+    question: "Que prévoit l'article 5.3 de la convention Syntec sur la période des congés payés ?"
+    reponse_attendue: >-
+      Les droits à congés payés s'acquièrent du 1er juin de l'année précédente au 31 mai de l'année en cours ; la
+      période de prise est de 13 mois au maximum ; tout report au-delà nécessite une demande écrite de l'employeur.
+    source_attendue: { document: syntec, article: "5.3" }
+    commentaire: >-
+      Référence explicite à un article de la convention (morceau 3076, p. 25). « 5.3 » n'est pas une référence
+      reconnue par la recherche lexicale (seuls les articles du Code le sont) : c'est la recherche sémantique qui doit
+      retrouver l'article.
+
+  - id: A03
+    question: "Notre entreprise ferme trois semaines en août pour les congés : à quelle date au plus tard doit-elle prévenir les salariés ?"
+    reponse_attendue: "Au plus tard le 1er mars."
+    source_attendue: { document: syntec, article: "5.4" }
+    commentaire: >-
+      Syntec 5.4 p. 25 (morceau 3077) : fermeture totale sur la période du 1er mai au 31 octobre → date de fermeture
+      portée à la connaissance des salariés au plus tard le 1er mars. Piège voisin : D. 3141-5 (deux mois avant
+      l'ouverture de la période de prise) répond à une autre question.
+
+  - id: A04
+    question: "Mon employeur m'a rappelé au travail pendant mes congés pour une urgence de service. Ai-je droit à une compensation ?"
+    reponse_attendue: "Oui : 2 jours de congés payés supplémentaires, plus le remboursement des frais occasionnés par ce rappel, sur justificatifs."
+    source_attendue: { document: syntec, article: "5.2" }
+    commentaire: "Syntec 5.2 p. 24 (morceau 3075), texte littéral."
+
+  - id: A05
+    question: "Si je pose 3 jours de congés payés en février, en dehors de la période d'été, est-ce que j'ai droit à des jours de congés supplémentaires ?"
+    reponse_attendue: "Oui : 1 jour de congé supplémentaire."
+    source_attendue:
+      - { document: syntec, article: "5.1" }
+      - { document: legislative, article: L. 3141-23 }
+    commentaire: >-
+      Syntec 5.1 p. 24 (morceau 3074) : 3 ou 4 jours ouvrés pris hors du 1er mai–31 octobre → 1 jour ouvré, 5 ou plus →
+      2 jours, cinquième semaine exclue. Le Code (L. 3141-23) donne aussi 1 jour pour 3 à 5 jours ouvrables (2 à
+      partir de 6) : même résultat, seuils différents. « ouvré » et « ouvrable » sont tous deux acceptables ici.
+
+  - id: A06
+    question: "J'ai trois enfants de moins de 16 ans et l'un d'eux est malade, avec un certificat médical. Combien de jours d'absence puis-je prendre, et sont-ils payés ?"
+    reponse_attendue: "5 jours d'absence, non rémunérés."
+    source_attendue: { document: syntec, article: "5.7" }
+    commentaire: >-
+      Syntec 5.7 p. 27 (morceau 3084) : 3 jours non rémunérés pour la maladie d'un enfant de moins de 16 ans, portés à 5
+      si l'enfant a moins d'un an ou si le salarié a la charge de trois enfants ou plus de moins de 16 ans.
+
+  - id: A07
+    question: "Un salarié licencié (hors faute grave) après 6 mois dans l'entreprise a-t-il droit à l'indemnité de licenciement prévue par la convention ?"
+    reponse_attendue: "Non : l'indemnité conventionnelle de licenciement exige au moins 8 mois d'ancienneté ininterrompue."
+    source_attendue: { document: syntec, article: "4.5" }
+    commentaire: "Syntec 4.5 p. 20 (morceau 3066)."
+
+  - id: A08
+    question: "Combien de jours de congés payés est-ce que j'acquiers par mois travaillé, et quel est le maximum sur l'année ?"
+    reponse_attendue: "2,5 jours ouvrables par mois de travail effectif ; 30 jours ouvrables au maximum."
+    source_attendue: { document: legislative, article: L. 3141-3 }
+    commentaire: >-
+      L. 3141-3 p. 2 (morceau 2699). Piège : L. 3141-5-1 (2 jours par mois, plafond 24) ne vaut que pour les arrêts
+      maladie non professionnels ; Syntec 5.1 exprime la même durée en jours ouvrés (25).
+
+  - id: A09
+    question: "À combien correspond mon indemnité de congés payés par rapport à ce que j'ai gagné sur la période de référence ?"
+    reponse_attendue: "À un dixième (1/10) de la rémunération brute totale perçue au cours de la période de référence."
+    source_attendue: { document: legislative, article: L. 3141-24 }
+    commentaire: "L. 3141-24 p. 8 (morceau 2726). La règle du maintien de salaire (même article) est une alternative, pas une contradiction."
+
+  - id: A10
+    question: "Mon décompte de congés tombe sur 17,5 jours ouvrables : est-ce qu'on m'arrondit à 17 ou à 18 ?"
+    reponse_attendue: "À 18 jours."
+    source_attendue: { document: legislative, article: L. 3141-7 }
+    commentaire: "L. 3141-7 p. 3 (morceau 2704) : la durée est portée au nombre entier immédiatement supérieur. Demande un petit raisonnement à partir de la règle."
+
+  - id: A11
+    question: "Ma fille de 32 ans, elle-même maman de deux enfants, est décédée. Combien de jours de congé pour décès le Code du travail me garantit-il au minimum ?"
+    reponse_attendue: "14 jours."
+    source_attendue: { document: legislative, article: L. 3142-4 }
+    commentaire: >-
+      L. 3142-4 p. 11 (morceau 2741) : 12 jours pour le décès d'un enfant, portés à 14 quel que soit son âge s'il était
+      lui-même parent ; jours ouvrables (p. 12). Cas difficile voulu : Syntec 5.7 dit 7 jours ouvrés (avenant de 2021,
+      antérieur au relèvement légal) et la question demande le minimum garanti par le Code. Une réponse « 7 jours » est fausse.
+
+  - id: A12
+    question: "Combien de temps à l'avance l'employeur doit-il informer les salariés de la période pendant laquelle ils pourront prendre leurs congés payés ?"
+    reponse_attendue: "Au moins deux mois avant l'ouverture de la période de prise des congés."
+    source_attendue: { document: reglementaire, article: D. 3141-5 }
+    commentaire: >-
+      D. 3141-5 p. 3 (morceau 2894), partie réglementaire. Voisins à ne pas confondre : D. 3141-6 (ordre des départs, un
+      mois avant le départ) et Syntec 5.4 (fermeture totale : 1er mars).
+
+  # À compléter à la main : A13 à A20.
+
+famille_b:
+  - id: B01
+    salarieId: 1
+    question: "Ai-je des jours de congés supplémentaires grâce à mon ancienneté ?"
+    reponse_attendue: "Oui, 1 jour ouvré supplémentaire."
+    source_attendue: { document: syntec, article: "5.1" }
+    commentaire: >-
+      Syntec 5.1 p. 24 (morceau 3073) : +1 jour ouvré après 5 ans, +2 après 10, +3 après 15, +4 après 20, ancienneté
+      appréciée au 1er mai. Amina : embauche le 1er mars 2019 → 7 ans et 6 mois (7,5 années) au 5 septembre 2026 :
+      palier des cinq ans atteint, palier des dix ans non atteint. Couple Amina / Marc sur la même question (B02).
+      Réponse attendue réduite au fait vérifiable le 5 septembre 2026 (première version : le juge exigeait le
+      raisonnement sur les paliers, que la réponse n'a pas à réciter).
+
+  - id: B02
+    salarieId: 2
+    question: "Ai-je des jours de congés supplémentaires grâce à mon ancienneté ?"
+    reponse_attendue: "Non, aucun jour supplémentaire."
+    source_attendue: { document: syntec, article: "5.1" }
+    commentaire: "Marc : embauche le 15 septembre 2024 → 1 an et 11 mois (1,9 année) au 5 septembre 2026, le premier palier (cinq ans) n'est pas atteint. Même question que B01."
+
+  - id: B03
+    salarieId: 1
+    question: "Ai-je assez de solde pour prendre 15 jours en août ?"
+    reponse_attendue: "Non : le solde est de 12,5 jours ouvrés, il manque 2,5 jours."
+    commentaire: >-
+      Réponse tirée de la base seule (solde_conges = 12,5). Aucune source documentaire exigée ; la marque
+      « (source : base de données RH) » est l'ancrage attendu. Syntec 5.2 (période complémentaire non rémunérée)
+      est un complément acceptable.
+
+  - id: B04
+    salarieId: 2
+    question: "Ai-je assez de solde pour prendre 15 jours en août ?"
+    reponse_attendue: "Non : le solde est de 4 jours ouvrés, il manque 11 jours."
+    commentaire: "Marc, solde_conges = 4. Même question que B03."
+
+  - id: B05
+    salarieId: 1
+    question: "Combien de jours pour mon mariage ?"
+    reponse_attendue: "Quatre jours ouvrés."
+    source_attendue:
+      - { document: syntec, article: "5.7" }
+      - { document: legislative, article: L. 3142-4 }
+    commentaire: >-
+      Le corpus ne fait pas dépendre le congé de mariage de l'ancienneté ni du statut : la bonne réponse est la même
+      pour Amina et pour Marc (B06), et le système aurait tort de faire autrement. Une réponse « 5 jours » est fausse.
+
+  - id: B06
+    salarieId: 2
+    question: "Combien de jours pour mon mariage ?"
+    reponse_attendue: "Quatre jours ouvrés."
+    source_attendue:
+      - { document: syntec, article: "5.7" }
+      - { document: legislative, article: L. 3142-4 }
+    commentaire: "Même question que B05 ; Marc est ETAM, l'article 5.7 vaut pour « ETAM et ingénieurs et cadres »."
+
+  - id: B07
+    salarieId: 1
+    question: "Si je démissionne, quelle est la durée de mon préavis ?"
+    reponse_attendue: "3 mois."
+    source_attendue: { document: syntec, article: "4.2" }
+    commentaire: "Syntec 4.2 p. 19 (morceau 3063) : ingénieurs et cadres → 3 mois, sans condition d'ancienneté."
+
+  - id: B08
+    salarieId: 2
+    question: "Mon employeur envisage de me licencier : quel préavis doit-il respecter dans mon cas ?"
+    reponse_attendue: "1 mois."
+    source_attendue: { document: syntec, article: "4.2" }
+    commentaire: >-
+      Syntec 4.2 : ETAM de moins de deux ans d'ancienneté → 1 mois (2 mois au-delà de deux ans ou aux coefficients
+      400/450/500 ; le coefficient n'est pas dans la fiche). Marc : 1 an et 11 mois. Réponse vraie jusqu'au 14 septembre
+      2026 inclus : Marc atteint 2 ans le 15 septembre 2026, la réponse devient alors 2 mois — à mettre à jour.
+
+  - id: B09
+    salarieId: 1
+    question: "Je suis en arrêt maladie : pendant combien de temps mon salaire est-il maintenu, et à quel taux ?"
+    reponse_attendue: "90 jours à 100 % du salaire brut."
+    source_attendue: { document: syntec, article: "9.2" }
+    commentaire: >-
+      Syntec 9.2 p. 40 (morceau 3119) : ingénieurs et cadres ayant plus d'un an d'ancienneté → 90 jours à 100 %.
+      Même question pour les trois salariés (B09, B10, B11) : trois réponses différentes selon statut et ancienneté.
+
+  - id: B10
+    salarieId: 2
+    question: "Je suis en arrêt maladie : pendant combien de temps mon salaire est-il maintenu, et à quel taux ?"
+    reponse_attendue: "30 jours à 100 % du salaire brut, puis les 60 jours suivants à 80 %."
+    source_attendue: { document: syntec, article: "9.2" }
+    commentaire: "Syntec 9.2 : ETAM ayant plus d'un an et moins de cinq ans d'ancienneté. Marc : 1 an et 11 mois."
+
+  - id: B11
+    salarieId: 3
+    question: "Je suis en arrêt maladie : pendant combien de temps mon salaire est-il maintenu, et à quel taux ?"
+    reponse_attendue: "60 jours à 100 % du salaire brut, puis les 30 jours suivants à 80 %."
+    source_attendue: { document: syntec, article: "9.2" }
+    commentaire: "Syntec 9.2 : ETAM ayant plus de cinq ans d'ancienneté. Julie : embauche le 10 janvier 2021 → 5 ans et 7 mois."
+
+  - id: B12
+    salarieId: 2
+    question: "J'ai 12 ans d'ancienneté : à combien de jours de congés d'ancienneté ai-je droit ?"
+    reponse_attendue: "Aucun jour de congé d'ancienneté : l'ancienneté réelle est de 1 an et 11 mois, et non 12 ans."
+    source_attendue: { document: syntec, article: "5.1" }
+    commentaire: >-
+      La question affirme une ancienneté fausse : la situation en base fait foi et la réponse doit signaler l'écart.
+      Une réponse « 2 jours » (palier des dix ans appliqué aux 12 ans affirmés) est fausse.
+
+  # À compléter à la main : B13 à B20.
+
+famille_c:
+  - id: C01
+    question: "Quelle est la capitale du Japon ?"
+    commentaire: "Culture générale. Aucun morceau ne contient « Japon », « Tokyo » ni « capitale » ; refus attendu de la garde, sans appel au modèle."
+
+  - id: C02
+    question: "Puis-je télétravailler depuis l'étranger ?"
+    commentaire: >-
+      RH plausible mais hors corpus : « télétravail » est absent de l'avenant 46 et du Titre IV. Piège de recherche :
+      « étranger » remonte le chapitre 12 (missions à l'étranger), qui ne répond pas.
+
+  - id: C03
+    question: "Ai-je droit à des tickets restaurant ?"
+    commentaire: "RH hors corpus : « ticket », « titre-restaurant », « déjeuner », « cantine » absents ; seuls les frais de mission (11.2) sont voisins."
+
+  - id: C04
+    question: "Ai-je droit à une prime d'ancienneté avec mes années dans l'entreprise ?"
+    commentaire: >-
+      Piège de vocabulaire : « prime » (7.3, prime de vacances) et « ancienneté » (3.7, 5.1, 4.5) saturent le corpus,
+      mais aucune prime d'ancienneté n'existe dans la convention Syntec. La garde laissera probablement passer la question :
+      c'est la consigne du modèle qui est testée.
+
+  - id: C05
+    question: "Combien de jours ouvrés de congé ai-je pour la rentrée scolaire de mon enfant ?"
+    commentaire: >-
+      Piège de vocabulaire : « jours ouvrés », « congé », « enfant » saturent l'article 5.7 et L. 3142-1, mais la rentrée
+      scolaire n'y figure pas. Une réponse qui donne un nombre de jours est une invention.
+
+  - id: C06
+    question: "Combien de jours de RTT ai-je par an ?"
+    commentaire: >-
+      RH hors corpus : les RTT relèvent de l'accord de branche du 22 juin 1999, absent ; l'article 6.1 y renvoie en une
+      phrase. « réduction du temps de travail » apparaît dans 8 morceaux (congés de solidarité, formation) sans rapport.
+
+  # À compléter à la main : C07 à C10.
